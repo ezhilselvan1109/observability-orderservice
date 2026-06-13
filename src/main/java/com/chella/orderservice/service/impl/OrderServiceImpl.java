@@ -38,7 +38,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse createOrder(CreateOrderRequest request) {
-        return Observation.createNotStarted("order.creation", observationRegistry)
+        return Observation.createNotStarted("order.create", observationRegistry)
             .observe(() -> {
                 // 1. Validate User exists
                 try {
