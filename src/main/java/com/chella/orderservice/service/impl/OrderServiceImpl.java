@@ -14,6 +14,9 @@ import com.chella.orderservice.mapper.OrderMapper;
 import com.chella.orderservice.repository.OrderRepository;
 import com.chella.orderservice.service.OrderService;
 import feign.FeignException;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,38 +33,44 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final UserServiceClient userServiceClient;
     private final NotificationServiceClient notificationServiceClient;
+    private final MeterRegistry meterRegistry;
+    private final ObservationRegistry observationRegistry;
 
     @Override
     public OrderResponse createOrder(CreateOrderRequest request) {
-        // 1. Validate User exists
-        try {
-            userServiceClient.getUserById(request.getUserId());
-        } catch (FeignException.NotFound e) {
-            throw new UserNotFoundException("User with ID " + request.getUserId() + " does not exist");
-        } catch (FeignException e) {
-            log.error("Failed to connect to user service: ", e);
-            throw new RuntimeException("Failed to validate user due to external service error");
-        }
+        return Observation.createNotStarted("order.creation", observationRegistry)
+            .observe(() -> {
+                // 1. Validate User exists
+                try {
+                    userServiceClient.getUserById(request.getUserId());
+                } catch (FeignException.NotFound e) {
+                    throw new UserNotFoundException("User with ID " + request.getUserId() + " does not exist");
+                } catch (FeignException e) {
+                    log.error("Failed to connect to user service: ", e);
+                    throw new RuntimeException("Failed to validate user due to external service error");
+                }
 
-        // 2. Map and Save Order
-        Order order = orderMapper.toEntity(request);
-        order.setStatus(OrderStatus.CREATED);
-        Order savedOrder = orderRepository.save(order);
+                // 2. Map and Save Order
+                Order order = orderMapper.toEntity(request);
+                order.setStatus(OrderStatus.CREATED);
+                Order savedOrder = orderRepository.save(order);
+                meterRegistry.counter("orders.created.count").increment();
 
-        // 3. Trigger Notification
-        try {
-            NotificationRequest notificationRequest = new NotificationRequest(
-                    savedOrder.getUserId(),
-                    "Order Created Successfully"
-            );
-            notificationServiceClient.sendNotification(notificationRequest);
-        } catch (Exception e) {
-            log.error("Failed to send notification for Order ID: {}", savedOrder.getId(), e);
-            // Non-blocking for order creation, but can throw depending on requirement
-            // throw new NotificationFailedException("Order created but failed to send notification");
-        }
+                // 3. Trigger Notification
+                try {
+                    NotificationRequest notificationRequest = new NotificationRequest(
+                            savedOrder.getUserId(),
+                            "Order Created Successfully"
+                    );
+                    notificationServiceClient.sendNotification(notificationRequest);
+                } catch (Exception e) {
+                    log.error("Failed to send notification for Order ID: {}", savedOrder.getId(), e);
+                    // Non-blocking for order creation, but can throw depending on requirement
+                    // throw new NotificationFailedException("Order created but failed to send notification");
+                }
 
-        return orderMapper.toResponse(savedOrder);
+                return orderMapper.toResponse(savedOrder);
+            });
     }
 
     @Override
