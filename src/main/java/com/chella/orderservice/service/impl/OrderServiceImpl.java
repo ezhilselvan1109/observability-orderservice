@@ -54,7 +54,7 @@ public class OrderServiceImpl implements OrderService {
                 Order order = orderMapper.toEntity(request);
                 order.setStatus(OrderStatus.CREATED);
                 Order savedOrder = orderRepository.save(order);
-                meterRegistry.counter("orders.created.count").increment();
+                meterRegistry.counter("orders_created_total").increment();
 
                 // 3. Trigger Notification
                 try {
