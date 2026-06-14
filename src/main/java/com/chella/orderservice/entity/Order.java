@@ -51,6 +51,9 @@ public class Order {
     @Column(nullable = false)
     private OrderStatus status;
 
+    @Column
+    private String notificationStatus;
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;
