@@ -30,6 +30,9 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -48,11 +51,16 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse createOrder(CreateOrderRequest request) {
+        
+        // Extract JWT Token on the main HTTP thread
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        String token = attributes != null ? attributes.getRequest().getHeader("Authorization") : null;
+
         return Observation.createNotStarted("order.create", observationRegistry)
             .observe(() -> {
                 // 1. Validate User exists (Synchronous via Feign with Resilience4j)
                 try {
-                    validateUser(request.getUserId()).join();
+                    validateUser(request.getUserId(), token).join();
                 } catch (Exception e) {
                     log.error("Failed to validate user: {}", e.getMessage());
                     throw new DownstreamServiceException("User service validation failed: " + e.getMessage());
@@ -102,10 +110,10 @@ public class OrderServiceImpl implements OrderService {
     @Retry(name = "userService")
     @Bulkhead(name = "userService", type = Bulkhead.Type.THREADPOOL)
     @TimeLimiter(name = "userService")
-    public CompletableFuture<Void> validateUser(Long userId) {
+    public CompletableFuture<Void> validateUser(Long userId, String token) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                userServiceClient.getUserById(userId);
+                userServiceClient.getUserById(token, userId);
                 return null;
             } catch (FeignException.NotFound | FeignException.BadRequest e) {
                 // Do not retry 4xx errors
@@ -120,7 +128,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     // Fallbacks
-    public CompletableFuture<Void> fallbackForUserService(Long userId, Throwable t) {
+    public CompletableFuture<Void> fallbackForUserService(Long userId, String token, Throwable t) {
         log.error("CIRCUIT_BREAKER_OPEN / FALLBACK TRIGGERED for userService. Reason: {}", t.getMessage());
         return CompletableFuture.failedFuture(new CircuitBreakerOpenException("User service temporarily unavailable"));
     }

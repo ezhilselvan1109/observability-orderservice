@@ -3,6 +3,7 @@ package com.chella.orderservice.client;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 import com.chella.orderservice.client.fallback.UserServiceClientFallback;
 
@@ -10,5 +11,5 @@ import com.chella.orderservice.client.fallback.UserServiceClientFallback;
 public interface UserServiceClient {
 
     @GetMapping("/{id}")
-    Object getUserById(@PathVariable("id") Long id);
+    Object getUserById(@RequestHeader("Authorization") String token, @PathVariable("id") Long id);
 }
